@@ -1,0 +1,296 @@
+/ ************************************************************
+/
+/ VERBUM.PAL PUNCHES READABLE TEXT ON PAPER TAPE
+/ RESURRECTED FOR PDP-8 USING ERIC L SMITH'S VERBUM.C AS A MODEL
+/ COPYRIGHT 2016, WILLIAM C. WUTTKE JR.
+/ 17 JUN 2016 - REV 1.0
+/   - ADDED CONTROL-C CHECKING
+/   - ADDED CHARACTER BOUNDS CHECKING
+/   - ADDED BASIC EDITING (RUBOUT - BACKSPACE BUFFER)
+/ ************************************************************
+/ MAIN
+/ ************************************************************
+ 
+        *200
+        CLA CLL
+        TAD MSGPTR      / PRINT MSG: "ENTER TEXT FOLLOWED BY CARRIAGE RETURN"
+        JMS PRMSG
+        JMS INSTR       / GET INPUT TEXT INTO BUFFER
+        TAD (-74)       / SIX INCHES OF LEADER
+        JMS PCHZ        / PUNCH LEADER
+        TAD BUFF        / PUNCH BANNER TEXT
+        JMS PCHSTR
+        TAD (-74)       / SIX INCHES OF LEADER
+        JMS PCHZ        / PUNCH TRAILER
+        JMP I (7600)        / END PROGRAM: BACK TO MONITOR
+ 
+/ ************************************************************
+/ PRINT WELCOME MESSAGE - ACC HOLDS POINTER TO STRING
+/ ************************************************************
+ 
+PRMSG,  0
+        DCA BUFFPT      / STORE MSG POINTER
+        CLA CLL
+        TLS         / TLS TO SET PRINTER FLAG
+        JMS CRLF        / RETURN CARRIAGE
+CHRTYP,     TAD I BUFFPT        / GET A CHARACTER
+        SNA         / IS IT ALL ZEROS?
+        JMP I PRMSG     / YES: RETURN
+        JMS TYPE        / NO: TYPE OUT THE CHARACTER
+        ISZ BUFFPT      / INCREMENT THE BUFFER POINTER
+        JMP CHRTYP      / TYPE ANOTHER CHARACTER
+ 
+/ ************************************************************
+/ TYPE A CARRIAGE RETURN AND LINE FEED
+/ ************************************************************      
+ 
+CRLF,   0               / CARRIAGE RETURN AND LINE FEED
+        TAD (215)       / TYPE CR FIRST
+        JMS TYPE
+        TAD (212)       / TYPE LINE FEED
+        JMS TYPE
+        JMP I CRLF
+ 
+/ ************************************************************
+/ TYPE A CHARACTER - ACC HOLDS CHAR
+/ ************************************************************
+ 
+TYPE,   0
+        TSF         / PRINTER READY YET?
+        JMP .-1         / NO: CHECK AGAIN
+        TLS         / TYPE IT
+        CLA         / CLEAR ACCUMULATOR
+        JMP I TYPE
+ 
+/ ************************************************************
+/ INPUT STRING INTO BUFFER
+/ CONTROL-C QUITS
+/ RUBOUT "ERASES" LAST CHAR FROM BUFFER, QUITS IF PAST START OF BUFFER
+/ *******COULD BE USED AS A GENERIC LINE INPUT ROUTINE********
+/ ************************************************************
+ 
+INSTR,      0
+        CLA CLL
+        TAD BUFF        / SET UP BUFFER SPACE
+        DCA BUFFPT      / STORE POINTER
+LISN,       KSF         / KEYBOARD STRUCK YET?
+        JMP .-1         / NO, CHECK AGAIN
+        KRB         / YES, READ CHARACTER
+        DCA I BUFFPT        / STORE CHARACTER
+        TAD I BUFFPT        / RECALL CHARACTER
+        TAD MCTRLC      / CHECK FOR CONTROL-C
+        SNA
+        JMP I (7600)        / YES, EXIT
+        CLA CLL         / NO, CONTINUE
+        TAD I BUFFPT            / RECALL CHARACTER
+        TAD MRUB        / CHECK FOR RUBOUT
+        SNA
+        JMP RUBOUT      / YES, PROCESS RUBOUT
+        CLA CLL         / NO, CONTINUE
+        TAD I BUFFPT        / RECALL CHARACTER
+        TAD MCR         / CHECK FOR CR
+        SNA
+        JMP DONE        / YES, CHARACTER IS A CR
+        CLA CLL         / NO, CONTINUE
+        TAD I BUFFPT        / RECALL CHARACTER
+        TAD (-237)      / CHECK FOR < 240
+        SPA
+        JMP LISN        / YES, CHARACTER < 240, GET ANOTHER      CLA CLL         / NO, CONTINUE      TAD I BUFFPT        / RECALL CHARACTER      TAD (-340)      / CHECK FOR > 337
+        SMA
+        JMP LISN        / YES, CHARACTER > 337, GET ANOTHER
+        CLA CLL         / NO, CONTINUE
+        TAD I BUFFPT        / RECALL CHARACTER
+        JMS TYPE        / PRINT IT
+        CLA CLL
+        DCA RUBFLG      / RESET RUBOUT FLAG
+        ISZ BUFFPT      / POINT TO NEXT BUFFER LOCATION
+        JMP LISN        / GET ANOTHER CHARACTER
+DONE,       CLA CLL         / STORE 0 IN LAST LOCATION
+        DCA I BUFFPT        / OVERWRITES CR
+        JMP I INSTR     / RETURN
+RUBOUT,     CLL CLA
+        TAD RUBFLG      / IS RUBOUT FLAG SET?
+        SNA
+        JMP RUB1        / NO, PRINT '\' AND LAST CHAR
+        JMP RUB2        / YES, PRINT LAST CHAR
+RUB1,       CLA CLL
+        TAD (334)       / TYPE '\'
+        JMS TYPE
+        CLA CLL IAC
+        DCA RUBFLG      / SET RUBOUT FLAG
+RUB2,       CLA CLL CMA
+        TAD BUFFPT      / DECREMENT BUFFER POINTER TO BEFORE RUBOUT
+        DCA BUFFPT
+        TAD I BUFFPT        / GET LAST CHAR
+        JMS TYPE        / PRINT IT
+        CLA CLL
+        TAD BUFFPT      / ARE WE BACKED UP BEYOND START OF BUFFER?
+        TAD MBUFF
+        SMA
+        JMP LISN        / NO, GET ANOTHER CHARACTER
+        JMP I (7600)        / YES, QUIT
+ 
+BUFF,   2000
+MBUFF,  -2000
+RUBFLG, 0
+MCR,    7563
+MCTRLC, 7575
+MRUB,   7401
+ 
+/ ************************************************************
+/ PUNCH COLUMN
+/ ************************************************************
+ 
+PCHC=TYPE               / SAME ROUTINE TO PUNCH OR TYPE
+ 
+/ ************************************************************
+/ PUNCH ZEROS - ACC HOLDS (-) COUNT
+/ CONTROL-C QUITS
+/ ************************************************************
+ 
+PCHZ,   0
+        DCA COUNT       / STORE COUNT, 0 IN ACC
+        JMS PCHC        / PUNCH IT
+        KRB         / CHECK FOR CONTROL-C
+        TAD MCTRLC
+        SNA
+        JMP I (7600)        / YES, QUIT
+        CLA CLL         / NO, CONTINUE
+        ISZ COUNT       / ARE WE DONE?
+        JMP .-7         / IF NOT, PUNCH AGAIN
+        JMP I PCHZ      / ELSE RETURN
+ 
+PAGE
+ 
+/ ************************************************************
+/ PUNCH CHARACTER - ACC HOLDS CHARACTER
+/ ************************************************************
+ 
+PCHCHR, 0
+        TAD (-240)      / GET OFFSET OF CHARACTER FROM START OF TABLE
+        DCA CHAR        / TEMP STORE CHAR
+        CLA CLL
+        TAD CHAR        / GET IT BACK
+        CLL RAL         / TIMES 2   - LINK MUST BE CLEARED
+        CLL RAL         / TIMES 4   - LINK MUST BE CLEARED
+        TAD CHAR        / MAKES TIMES 5 = OFFSET INTO CHARACTERS TABLE
+        TAD CHTBLP      / ADD OFFSET TO START OF CHARS TABLE
+        DCA COLP        / STORE IT IN COLUMN POINTER
+        TAD (-5)        / 5 COLUMNS
+        DCA COUNT       / STORE COUNT
+PCHCOL,     TAD I COLP      / GET CURRENT COLUMN
+        JMS PCHC        / PUNCH IT
+        ISZ COUNT       / LAST COLUMN?
+        JMP NXTCOL      / IF NOT GET NEXT COLUMN
+        CLA CLL         / CLEAR ACC & LINK
+        TAD (-2)
+        JMS PCHZ        / PUNCH 2 BLANK COLUMNS
+        CLA CLL         / CLEAR ACC & LINK
+        JMP I PCHCHR        / AND RETURN - WE'RE FINISHED
+NXTCOL,     ISZ COLP        / INCREMENT COLUMN POINTER
+        NOP
+        JMP PCHCOL      / PUNCH IT
+ 
+/ ************************************************************
+/ PUNCH STRING - ACC HOLDS POINTER TO STRING
+/ CONTROL-C QUITS
+/ ************************************************************
+ 
+PCHSTR,     0
+        DCA BUFFPT      / STORE MSG POINTER
+        CLA CLL
+        TLS         / TLS TO SET PRINTER FLAG
+CHRPCH,     TAD I BUFFPT        / GET A CHARACTER
+        SNA         / IS IT ALL ZEROS?
+        JMP I PCHSTR        / YES: RETURN
+        JMS PCHCHR      / NO: PUNCH THE CHARACTER
+        KRB         / CHECK FOR CONTROL-C
+        TAD MCTRLC
+        SNA
+        JMP I (7600)        / YES, QUIT
+        CLA CLL         / NO, CONTINUE
+        ISZ BUFFPT      / INCREMENT THE BUFFER POINTER
+        JMP CHRPCH      / PUNCH ANOTHER CHARACTER
+        JMP I PCHSTR
+ 
+COLP,   0               / COLUMN POINTER
+CHAR,   0               / CHARACTER POINTER
+COUNT,  0               / GENERAL PURPOSE COUNTER STORAGE
+ 
+        *100
+BUFFPT, 0               / BUFFER POINTER IN PAGE 0
+ 
+/ ************************************************************
+/ PAPER TAPE PUNCH READABLE CHARACTERS TABLE
+/ ************************************************************
+ 
+        *600
+CHTBL,  000;000;000;000;000     / SPACE (240)
+        000;000;175;000;000     / BANG
+        000;140;000;140;000     / DOUBLE QUOTE
+        024;177;024;177;024     / OCTOTHORPE
+        022;052;177;052;044     / DOLLAR SIGN
+        142;144;010;023;043     / PERCENT SIGN
+        066;111;065;002;005     / AMPERSAND
+        000;000;160;000;000     / SINGLE QUOTE
+        000;034;042;101;000     / LEFT PARENTHESIS
+        000;101;042;034;000     / RIGHT PARENTHESIS
+        042;024;177;024;042     / SPLAT
+        010;010;076;010;010     / PLUS
+        000;001;006;000;000     / COMMA
+        010;010;010;010;010     / HYPHEN
+        000;000;001;000;000     / PERIOD
+        002;004;010;020;040     / SLASH
+        076;105;111;121;076     / 0
+        000;041;177;001;000     / 1
+        043;105;111;111;061     / 2
+        102;101;111;131;146     / 3
+        014;024;044;177;004     / 4
+        162;121;121;121;116     / 5
+        036;051;111;111;106     / 6
+        100;107;110;120;140     / 7
+        066;111;111;111;066     / 8
+        061;111;111;112;074     / 9
+        000;000;024;000;000     / COLON
+        000;001;026;000;000     / SEMICOLON
+        010;024;042;101;000     / LESS THAN
+        024;024;024;024;024     / EQUALS
+        000;101;042;024;010     / GREATER THAN
+        040;100;115;120;040     / QUESTION MARK
+        076;101;135;115;071     / AT SIGN
+        037;044;104;044;037     / A
+        177;111;111;111;066     / B
+        076;101;101;101;042     / C
+        177;101;101;101;076     / D
+        177;111;111;111;101     / E
+        177;110;110;110;100     / F
+        076;101;101;111;157     / G
+        177;010;010;010;177     / H
+        000;101;177;101;000     / I
+        002;001;001;001;176     / J
+        177;010;024;042;101     / K
+        177;001;001;001;001     / L
+        177;040;030;040;177     / M
+        177;020;010;004;177     / N
+        076;101;101;101;076     / O
+        177;110;110;110;060     / P
+        076;101;105;102;075     / Q
+        177;110;114;112;061     / R
+        062;111;111;111;046     / S
+        100;100;177;100;100     / T
+        176;001;001;001;176     / U
+        174;002;001;002;174     / V
+        177;002;014;002;177     / W
+        143;024;010;024;143     / X
+        140;020;017;020;140     / Y
+        103;105;111;121;141     / Z
+        177;177;101;101;101     / LEFT BRACKET
+        040;020;010;004;002     / BACKSLASH
+        101;101;101;177;177     / RIGHT BRACKET
+        004;010;020;010;004     / CARET
+        001;001;001;001;001     / UNDERSCORE (337)
+MSG,    "E;"N;"T;"E;"R;" ;"T;"E;"X;"T;" ;"F;"O;"L;"L;"O;"W;"E;"D;" ;"B;"Y;
+    " ;"C;"A;"R;"R;"I;"A;"G;"E;" ;"R;"E;"T;"U;"R;"N;":;215;212;0
+MSGPTR, MSG             / MESSAGE POINTER
+CHTBLP, CHTBL               / CHARACTER TABLE POINTER
+$
