@@ -31,3 +31,8 @@
 ## Arduino OP80a tape reader
 [OP80a-PaperTape-OLED](./OP80a-PaperTape-OLED)
 
+## paper tape image archive
+[https://so-much-stuff.com/pdp8/papertape/papertape.php](https://so-much-stuff.com/pdp8/papertape/papertape.php)
+
+## DSI NC-2400 Reader/Punch manual
+[DSI_NC-2400_Reader-Punch.pdf](./documents/DSI_NC-2400_Reader-Punch.pdf)
